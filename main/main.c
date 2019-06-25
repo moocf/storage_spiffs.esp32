@@ -1,72 +1,78 @@
-#include <esp_wifi.h>
-#include <esp_event.h>
-#include <nvs_flash.h>
+#include <stdio.h>
+#include <string.h>
+#include <esp_spiffs.h>
+#include <mbedtls/md5.h>
 #include "macros.h"
 
 
-static esp_err_t nvs_init() {
-  esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ERET( nvs_flash_erase() );
-    ERET( nvs_flash_init() );
+static esp_err_t read_hello_txt() {
+  printf("- Open file /spiffs/hello.txt\n");
+  FILE *f = fopen("/spiffs/hello.txt", "r");
+  if (f == NULL) {
+    printf("Cannot open file!\n");
+    return ESP_FAIL;
   }
-  ERET( ret );
+  char buff[64];
+  memset(buff, 0, sizeof(buff));
+  printf("- Read file contents\n");
+  fread(buff, 1, sizeof(buff), f);
+  printf(buff);
+  printf("\n");
+  printf("- Close file\n");
+  fclose(f);
   return ESP_OK;
 }
 
 
-static void on_wifi(void* arg, esp_event_base_t base, int32_t id, void* data) {
-  if (id == WIFI_EVENT_AP_STACONNECTED) {
-    wifi_event_ap_staconnected_t *d = (wifi_event_ap_staconnected_t*) data;
-    printf("Station " MACSTR " joined, AID = %d (event)\n", MAC2STR(d->mac), d->aid);
-  } else if (id == WIFI_EVENT_AP_STADISCONNECTED) {
-    wifi_event_ap_stadisconnected_t *d = (wifi_event_ap_stadisconnected_t*) data;
-    printf("Station " MACSTR " left, AID = %d (event)\n", MAC2STR(d->mac), d->aid);
-  } else if(id == WIFI_EVENT_SCAN_DONE) {
-    printf("- WiFi scan done (event)\n");
-    printf("- Get scanned AP records\n");
-    static uint16_t count = 32;
-    static wifi_ap_record_t records[32];
-    ERETV( esp_wifi_scan_get_ap_records(&count, records) );
-    for(int i=0; i<count; i++) {
-      printf("%d. %s : %d\n", i+1, records[i].ssid, records[i].rssi);
-    }
+static esp_err_t md5_alice_txt() {
+  printf(" - Open file /spiffs/story/alice.txt\n");
+  FILE *f = fopen("/spiffs/story/alice.txt", "r");
+  if (f == NULL) {
+    printf("Cannot open file!\n");
+    return ESP_FAIL;
   }
-}
-
-
-static esp_err_t wifi_ap() {
-  printf("- Initialize TCP/IP adapter\n");
-  tcpip_adapter_init();
-  printf("- Create default event loop\n");
-  ERET( esp_event_loop_create_default() );
-  printf("- Initialize WiFi with default config\n");
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ERET( esp_wifi_init(&cfg) );
-  printf("- Register WiFi event handler\n");
-  ERET( esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &on_wifi, NULL) );
-  printf("- Set WiFi mode as AP\n");
-  ERET( esp_wifi_set_mode(WIFI_MODE_AP) );
-  printf("- Set WiFi configuration\n");
-  wifi_config_t wifi_config = {.ap = {
-    .ssid = "charmender",
-    .password = "charmender",
-    .ssid_len = 0,
-    .channel = 0,
-    .authmode = WIFI_AUTH_WPA_PSK,
-    .ssid_hidden = 0,
-    .max_connection = 4,
-    .beacon_interval = 100,
-  }};
-  ERET( esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config) );
-  printf("- Start WiFi\n");
-  ERET( esp_wifi_start() );
+  #define MD5_MAX_LEN 16
+  uint8_t buff[64];
+  mbedtls_md5_context ctx;
+  uint8_t digest[MD5_MAX_LEN];
+  printf("- Initialize MD5 context\n");
+  mbedtls_md5_init(&ctx);
+  printf("- Start MD5 ret\n");
+  mbedtls_md5_starts_ret(&ctx);
+  size_t read;
+  do {
+    printf("- Read chunk from file\n");
+    read = fread(buff, 1, sizeof(buff), f);
+    printf("- Update MD5 ret using chunk\n");
+    mbedtls_md5_update_ret(&ctx, buff, read);
+  } while(read == sizeof(buff));
+  printf("- Finish MD5 ret\n");
+  mbedtls_md5_finish_ret(&ctx, digest);
+  printf("- Generate digest string (hex)\n");
+  char digest_str[MD5_MAX_LEN * 2];
+  for (int i=0; i<MD5_MAX_LEN; i++)
+    sprintf(&digest_str[i<<1], "%02x", digest[i]);
+  printf("MD5 digest = %s\n", digest_str);
+  printf("- Close file");
+  fclose(f);
   return ESP_OK;
 }
 
 
 void app_main() {
-  printf("- Initialize NVS\n");
-  ESP_ERROR_CHECK( nvs_init() );
-  ESP_ERROR_CHECK( wifi_ap() );
+  printf("- Mount SPIFFS as VFS\n");
+  printf("(VFS enables access though stdio)");
+  esp_vfs_spiffs_conf_t config = {
+    .base_path = "/spiffs",
+    .partition_label = NULL,
+    .max_files = 5,
+    .format_if_mount_failed = false,
+  };
+  ERETV( esp_vfs_spiffs_register(&config) );
+  printf("- Get SPIFFS info total, used`bytes\n");
+  size_t total, used;
+  ERETV( esp_spiffs_info(NULL, &total, &used) );
+  printf("Total = %d, Used = %d\n", total, used);
+  ERETV( read_hello_txt() );
+  ERETV( md5_alice_txt() );
 }
