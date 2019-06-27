@@ -25,7 +25,7 @@ static esp_err_t read_hello_txt() {
 
 
 static esp_err_t md5_alice_txt() {
-  printf(" - Open file /spiffs/story/alice.txt\n");
+  printf("- Open file /spiffs/story/alice.txt\n");
   FILE *f = fopen("/spiffs/story/alice.txt", "r");
   if (f == NULL) {
     printf("Cannot open file!\n");
@@ -41,9 +41,7 @@ static esp_err_t md5_alice_txt() {
   mbedtls_md5_starts_ret(&ctx);
   size_t read;
   do {
-    printf("- Read chunk from file\n");
     read = fread(buff, 1, sizeof(buff), f);
-    printf("- Update MD5 ret using chunk\n");
     mbedtls_md5_update_ret(&ctx, buff, read);
   } while(read == sizeof(buff));
   printf("- Finish MD5 ret\n");
@@ -61,7 +59,7 @@ static esp_err_t md5_alice_txt() {
 
 void app_main() {
   printf("- Mount SPIFFS as VFS\n");
-  printf("(VFS enables access though stdio)");
+  printf("(VFS enables access though stdio)\n");
   esp_vfs_spiffs_conf_t config = {
     .base_path = "/spiffs",
     .partition_label = NULL,
